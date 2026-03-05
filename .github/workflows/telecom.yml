@@ -1,0 +1,29 @@
+name: 中国电信每日监控
+
+on:
+  workflow_dispatch: # 允许网页端手动点击运行测试
+  schedule:
+    - cron: '0 0 * * *' # 每天北京时间早晨 8 点自动运行
+
+jobs:
+  run-monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 获取最新代码
+        uses: actions/checkout@v3
+
+      - name: 配置 Python 环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 安装运行必需库
+        run: |
+          pip install -r requirements.txt
+          
+      - name: 执行监控脚本
+        env:
+          TELECOM_USER: ${{ secrets.TELECOM_USER }}
+          TELECOM_FLUX_PACKAGE: ${{ secrets.TELECOM_FLUX_PACKAGE }}
+        run: |
+          python telecom_monitor.py
