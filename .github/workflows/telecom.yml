@@ -5,29 +5,42 @@ on:
   schedule:
     - cron: '0 * * * *' 
 
+# 强制赋予写入文件的权限，解决 403 推送失败问题！
+permissions:
+  contents: write
+
 jobs:
   run-monitor:
     runs-on: ubuntu-latest
     steps:
       - name: 获取最新代码
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: 启动服务并生成数据
         env:
           TELECOM_USER: ${{ secrets.TELECOM_USER }}
         run: |
+          if [ -z "$TELECOM_USER" ]; then
+            echo "🚨 错误：未找到 TELECOM_USER 变量，请检查 Secrets 是否填对！"
+            exit 1
+          fi
+          
           PHONE=${TELECOM_USER:0:11}
           PWD=${TELECOM_USER:11}
           
-          # 1. 启动原作者的接口容器
+          echo "👉 1. 正在启动电信接口容器..."
           docker run -d --name telecom -p 10000:10000 -e WHITELIST_NUM="$PHONE" cp0204/chinatelecommonitor:main
-          sleep 15
+          sleep 20
           
-          # 2. 模拟登录并获取原始数据
-          curl -s -X POST http://127.0.0.1:10000/login -H "Content-Type: application/json" -d "{\"phonenum\": \"$PHONE\", \"password\": \"$PWD\"}"
+          echo "👉 2. 正在执行登录..."
+          LOGIN_RES=$(curl -s -X POST http://127.0.0.1:10000/login -H "Content-Type: application/json" -d "{\"phonenum\": \"$PHONE\", \"password\": \"$PWD\"}")
+          echo "🔔 登录返回结果: $LOGIN_RES"
+          
+          echo "👉 3. 正在获取话费数据..."
           DATA=$(curl -s "http://127.0.0.1:10000/summary?phonenum=$PHONE")
+          echo "🔔 原始数据返回: $DATA"
           
-          # 3. 数据脱敏并转换成手机小组件认识的格式
+          echo "👉 4. 正在生成 data.json..."
           echo $DATA | jq "{
             status: \"success\",
             results: [
@@ -48,6 +61,8 @@ jobs:
             ]
           }" > data.json
           
+          echo "✅ data.json 生成完毕！"
+
       - name: 保存数据到 GitHub 仓库
         run: |
           git config --global user.name "github-actions[bot]"
