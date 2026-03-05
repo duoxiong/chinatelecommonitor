@@ -3,7 +3,7 @@ name: 中国电信每日监控
 on:
   workflow_dispatch: 
   schedule:
-    - cron: '0 0 * * *' 
+    - cron: '0 * * * *' 
 
 jobs:
   run-monitor:
@@ -12,17 +12,46 @@ jobs:
       - name: 获取最新代码
         uses: actions/checkout@v3
 
-      - name: 配置 Python 环境
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: 安装运行必需库
-        run: |
-          pip install -r requirements.txt
-          
-      - name: 执行监控脚本
+      - name: 启动服务并生成数据
         env:
           TELECOM_USER: ${{ secrets.TELECOM_USER }}
         run: |
-          python telecom_monitor.py
+          PHONE=${TELECOM_USER:0:11}
+          PWD=${TELECOM_USER:11}
+          
+          # 1. 启动原作者的接口容器
+          docker run -d --name telecom -p 10000:10000 -e WHITELIST_NUM="$PHONE" cp0204/chinatelecommonitor:main
+          sleep 15
+          
+          # 2. 模拟登录并获取原始数据
+          curl -s -X POST http://127.0.0.1:10000/login -H "Content-Type: application/json" -d "{\"phonenum\": \"$PHONE\", \"password\": \"$PWD\"}"
+          DATA=$(curl -s "http://127.0.0.1:10000/summary?phonenum=$PHONE")
+          
+          # 3. 数据脱敏并转换成手机小组件认识的格式
+          echo $DATA | jq "{
+            status: \"success\",
+            results: [
+              {
+                data: {
+                  balance: { amount: ((.balance // 0) / 100) },
+                  total_flow: { 
+                    total: ((((.flowTotal // 0) / 1048576) * 100 | round) / 100), 
+                    balance: (((((.flowTotal // 0) - (.flowUse // 0)) / 1048576) * 100 | round) / 100), 
+                    used: ((((.flowUse // 0) / 1048576) * 100 | round) / 100)
+                  },
+                  voice: { 
+                    total: (.voiceTotal // 0), 
+                    balance: (.voiceBalance // 0) 
+                  }
+                }
+              }
+            ]
+          }" > data.json
+          
+      - name: 保存数据到 GitHub 仓库
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git commit -m "自动更新安全数据文件" || echo "数据无变化"
+          git push
