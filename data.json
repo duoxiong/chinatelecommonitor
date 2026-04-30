@@ -7,13 +7,13 @@
           "amount": 974.39
         },
         "total_flow": {
-          "total": 31,
-          "balance": 0,
-          "used": 31
+          "total": 30,
+          "balance": 30,
+          "used": 0
         },
         "voice": {
-          "total": 500,
-          "balance": 290
+          "total": 0,
+          "balance": 0
         }
       }
     }
